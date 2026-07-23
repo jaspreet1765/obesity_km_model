@@ -6,17 +6,19 @@ import gradio as gr
 # ==========================================================
 # Load Trained Model
 # ==========================================================
+
 try:
-    model = joblib.load("obesity_knn_model.pkl")
+    deployed_knn = joblib.load("obesity_knn_model.pkl")
     print("✅ Model Loaded Successfully!")
 except Exception as e:
-    print("Error loading model:", e)
-    model = None
+    print(e)
+    deployed_knn = None
 
 
 # ==========================================================
 # Prediction Function
 # ==========================================================
+
 def predict_obesity(
     Age,
     Gender,
@@ -31,21 +33,33 @@ def predict_obesity(
     family_history_with_overweight,
     FAF,
     TUE,
-    MTRANS
+    MTRANS,
 ):
 
-    # Check empty fields
     values = [
-        Age, Gender, Height, Weight, CALC, FAVC, FCVC,
-        NCP, SMOKE, CH2O,
+        Age,
+        Gender,
+        Height,
+        Weight,
+        CALC,
+        FAVC,
+        FCVC,
+        NCP,
+        SMOKE,
+        CH2O,
         family_history_with_overweight,
-        FAF, TUE, MTRANS
+        FAF,
+        TUE,
+        MTRANS,
     ]
 
+    # Empty Input Check
     if any(v is None or str(v).strip() == "" for v in values):
-        return "⚠ Please fill all input fields."
+        return "❌ Please fill all the fields."
 
+    # Type Conversion
     try:
+
         Age = float(Age)
         Gender = int(Gender)
         Height = float(Height)
@@ -63,15 +77,24 @@ def predict_obesity(
         TUE = float(TUE)
         MTRANS = int(MTRANS)
 
-    except Exception:
-        return "❌ Invalid input. Please enter correct values."
+    except Exception as e:
+        return f"❌ Invalid Input\n\n{str(e)}"
 
-    # Negative values check
-    if Age <= 0 or Height <= 0 or Weight <= 0:
-        return "❌ Age, Height and Weight must be greater than zero."
+    # Negative Value Check
+    if (
+        Age < 0
+        or Height < 0
+        or Weight < 0
+        or FCVC < 0
+        or NCP < 0
+        or CH2O < 0
+        or FAF < 0
+        or TUE < 0
+    ):
+        return "❌ Negative values are not allowed."
 
-    if model is None:
-        return "❌ Model not loaded."
+    if deployed_knn is None:
+        return "❌ Model failed to load."
 
     try:
 
@@ -92,53 +115,104 @@ def predict_obesity(
             MTRANS
         ]]
 
-        prediction = model.predict(input_data)[0]
+        prediction = deployed_knn.predict(input_data)
 
-        bmi = Weight / (Height * Height)
+        category_map = {
+            0: "Insufficient Weight (Underweight)",
+            1: "Normal Weight",
+            2: "Overweight Level I",
+            3: "Overweight Level II",
+            4: "Obesity Type I",
+            5: "Obesity Type II",
+            6: "Obesity Type III"
+        }
 
-        result = f"""
-🩺 Obesity Prediction
+        result = category_map.get(
+            prediction[0],
+            f"Unknown Category ({prediction[0]})"
+        )
 
-Predicted Class : {str(prediction).replace('_',' ')}
+        return f"""
+🩺 Obesity Assessment Result
 
-BMI : {bmi:.2f}
+Predicted Category:
+
+{result}
+
+⚠️ This prediction is generated using a Machine Learning (KNN) model and should not replace professional medical advice.
 """
 
-        return result
-
     except Exception:
-        return traceback.format_exc()
+
+        error = traceback.format_exc()
+        print(error)
+
+        return f"""
+❌ Prediction Failed
+
+{error}
+"""
+
 
 # ==========================================================
-# Gradio Interface
+# Gradio UI
 # ==========================================================
 
-with gr.Blocks(theme=gr.themes.Soft()) as app:
+with gr.Blocks(
+    theme=gr.themes.Soft(
+        primary_hue="blue",
+        neutral_hue="slate"
+    )
+) as app:
 
     gr.Markdown(
         """
 # 🩺 Obesity Level Estimation System
 
-Estimate obesity level using a trained **K-Nearest Neighbors (KNN)** model.
+Estimate obesity level using a trained **K-Nearest Neighbors (KNN)** Machine Learning model.
+
+Fill all the information below and click **Evaluate Obesity Level**.
 """
     )
 
     with gr.Row():
 
+        # Column 1
         with gr.Column():
-            Age = gr.Number(label="Age")
+
+            gr.Markdown("## 👤 Personal Details")
+
+            Age = gr.Number(label="Age (Years)")
+
             Gender = gr.Dropdown(
-                choices=[("Female", 0), ("Male", 1)],
+                choices=[
+                    ("Female", 0),
+                    ("Male", 1)
+                ],
                 label="Gender"
             )
-            Height = gr.Number(label="Height (m)")
-            Weight = gr.Number(label="Weight (kg)")
-            family_history_with_overweight = gr.Dropdown(
-                choices=[("No", 0), ("Yes", 1)],
-                label="Family History"
+
+            Height = gr.Number(
+                label="Height (Meters)"
             )
 
+            Weight = gr.Number(
+                label="Weight (Kilograms)"
+            )
+
+            family_history_with_overweight = gr.Dropdown(
+                choices=[
+                    ("No", 0),
+                    ("Yes", 1)
+                ],
+                label="Family History of Overweight"
+            )
+
+        # Column 2
         with gr.Column():
+
+            gr.Markdown("## 🥗 Dietary Habits")
+
             CALC = gr.Dropdown(
                 choices=[
                     ("No", 0),
@@ -150,72 +224,113 @@ Estimate obesity level using a trained **K-Nearest Neighbors (KNN)** model.
             )
 
             FAVC = gr.Dropdown(
-                choices=[("No", 0), ("Yes", 1)],
+                choices=[
+                    ("No", 0),
+                    ("Yes", 1)
+                ],
                 label="High Calorie Food"
             )
 
-            FCVC = gr.Number(label="Vegetable Consumption (1-3)")
-            NCP = gr.Number(label="Main Meals Per Day")
-            SMOKE = gr.Dropdown(
-                choices=[("No", 0), ("Yes", 1)],
-                label="Smoking"
+            FCVC = gr.Number(
+                label="Vegetable Consumption (1-3)"
             )
 
+            NCP = gr.Number(
+                label="Main Meals Per Day"
+            )
+
+            CH2O = gr.Number(
+                label="Daily Water Intake (Litres)"
+            )
+
+        # Column 3
         with gr.Column():
-            CH2O = gr.Number(label="Water Intake (Litres)")
-            FAF = gr.Number(label="Physical Activity")
-            TUE = gr.Number(label="Technology Usage")
+
+            gr.Markdown("## 🏃 Lifestyle")
+
+            SMOKE = gr.Dropdown(
+                choices=[
+                    ("No", 0),
+                    ("Yes", 1)
+                ],
+                label="Smoker"
+            )
+
+            FAF = gr.Number(
+                label="Physical Activity Frequency (0-3)"
+            )
+
+            TUE = gr.Number(
+                label="Technology Usage Time (0-2)"
+            )
+
             MTRANS = gr.Dropdown(
                 choices=[
                     ("Automobile", 0),
                     ("Motorbike", 1),
                     ("Bike", 2),
-                    ("Public Transport", 3),
-                    ("Walking", 4),
+                    ("Public Transportation", 3),
+                    ("Walking", 4)
                 ],
                 label="Transportation"
             )
 
-    predict_btn = gr.Button(
-        "Predict Obesity Level",
-        variant="primary"
-    )
+    gr.Markdown("---")
 
-    output = gr.Textbox(
+    with gr.Row():
+
+        submit_btn = gr.Button(
+            "🔍 Evaluate Obesity Level",
+            variant="primary"
+        )
+
+        clear_btn = gr.ClearButton()
+
+    result_box = gr.Textbox(
         label="Prediction Result",
-        lines=5
-    )
-
-    predict_btn.click(
-        fn=predict_obesity,
-        inputs=[
-            Age,
-            Gender,
-            Height,
-            Weight,
-            CALC,
-            FAVC,
-            FCVC,
-            NCP,
-            SMOKE,
-            CH2O,
-            family_history_with_overweight,
-            FAF,
-            TUE,
-            MTRANS
-        ],
-        outputs=output
+        lines=8,
+        interactive=False
     )
 
     gr.Markdown(
         """
 ---
-### 👩‍💻 Developed By
 
-**Jaspreet Kaur**
+### 👨‍💻 About
 
+**Obesity Level Estimation System**
 
+Developed using **Machine Learning (K-Nearest Neighbors)** and **Gradio**.
+
+⚠️ This application is for educational purposes only and should not replace medical consultation.
 """
+    )
+
+    input_components = [
+        Age,
+        Gender,
+        Height,
+        Weight,
+        CALC,
+        FAVC,
+        FCVC,
+        NCP,
+        SMOKE,
+        CH2O,
+        family_history_with_overweight,
+        FAF,
+        TUE,
+        MTRANS
+    ]
+
+    submit_btn.click(
+        fn=predict_obesity,
+        inputs=input_components,
+        outputs=result_box
+    )
+
+    clear_btn.add(
+        input_components + [result_box]
     )
 
 
